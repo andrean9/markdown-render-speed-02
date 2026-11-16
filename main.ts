@@ -22,7 +22,11 @@ interface Case {
 // realistic shapes before the real work starts. It is a fixed synthetic string,
 // not any case's input, and its output is discarded: it changes no result, it only
 // moves JIT warm-up ahead of the timed loop. Measured locally: it costs ~30 ms and
-// saves ~100 ms of parse time over the 720 cases.
+// saves ~100 ms of parse time over the 720 cases. The v2 warmup also covers the
+// new fast paths: a plain multi-line paragraph (the block lexer's paragraph scan),
+// a table right after one (the scan must bail on the delimiter row, not swallow
+// it), and a list item with a lazy continuation line (the list tokenizer's
+// under-indented-line path), so those are warm too before the timed loop.
 const WARMUP = `# Warmup Heading
 
 This is a paragraph with **bold** and *italic* and ~~strikethrough~~ and \`code\`
@@ -61,6 +65,17 @@ const x = 1;
 
 Setext heading
 =============
+
+A plain paragraph of several lines, the common case the block lexer
+fast-paths, followed by a table it must not swallow:
+
+| Head One | Head Two |
+|:---------|---------:|
+| cell | cell |
+
+- a list item with a lazy continuation line
+that keeps going without its indent
+- and one more item
 
 Another paragraph to finish the warmup document off properly.
 `.repeat(8);

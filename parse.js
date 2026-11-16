@@ -27,6 +27,14 @@ const CARRIAGE_RETURN = /\r\n|\r/g;
  */
 const INLINE_SPECIAL = /[\\<\[!`*~_&@]|www\.|:\/\/|mailto:|  \n/;
 
+/**
+ * Inline runs cached per document: at most this many distinct runs are kept.
+ * The cache is created fresh by every parse() call, so no result ever crosses
+ * documents (the rules forbid caching between cases); it only saves re-lexing
+ * a run that repeats inside one long document, such as a README's table cells.
+ */
+const INLINE_CACHE_MAX = 2000;
+
 /** The HTML marked 18.1.3 renders for `markdown`, with marked's defaults. */
 export function parse(markdown) {
   const opt = { ...defaults };
@@ -34,6 +42,11 @@ export function parse(markdown) {
   const src = markdown.replace(CARRIAGE_RETURN, '\n');
   const tokens = lexer.blockTokens(src, lexer.tokens);
   const queue = lexer.inlineQueue;
+  // One cache per document, keyed by the run's source text. Sound because a
+  // run's tokens depend only on its text plus the document's link definitions
+  // and options, all fixed once block lexing has run; and the Parser only
+  // reads tokens, so sharing the token objects between entries is safe.
+  const inlineCache = new Map();
   for (let i = 0; i < queue.length; i++) {
     const entry = queue[i];
     lexer.state.inRawBlock = false;
@@ -41,7 +54,13 @@ export function parse(markdown) {
       // Plain text: one text token, exactly what marked's inline lexer produces.
       entry.tokens.push({ type: 'text', raw: entry.src, text: entry.src });
     } else {
-      lexer.inlineTokens(entry.src, entry.tokens);
+      const hit = inlineCache.get(entry.src);
+      if (hit !== undefined) {
+        for (let j = 0; j < hit.length; j++) entry.tokens.push(hit[j]);
+      } else {
+        lexer.inlineTokens(entry.src, entry.tokens);
+        if (inlineCache.size < INLINE_CACHE_MAX) inlineCache.set(entry.src, entry.tokens);
+      }
     }
   }
   lexer.inlineQueue = [];

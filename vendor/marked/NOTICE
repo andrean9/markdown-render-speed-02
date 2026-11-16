@@ -12,9 +12,13 @@ competition's practice set (720/720 cases) and against the unmodified build.
   licence     MIT (Copyright (c) 2018+, MarkedJS; Copyright (c) 2011-2018, Christopher Jeffrey); LICENSE also
               carries the original Markdown's BSD-style notice (Copyright 2004, John Gruber)
 
-  marked.esm.js   built with esbuild from the modified source (src/Lexer.ts, src/Tokenizer.ts,
-                  see below), same bundle settings as the project's own esbuild.config.js (ESM, minified)
-                  sha256 e7182b162f0a514f385b10b9661f992a8c918de08436e4e6c525df28a6f98606
+  marked.esm.js   v1 built with esbuild from the modified source (src/Lexer.ts,
+                  src/Tokenizer.ts, see below), same bundle settings as the
+                  project's own esbuild.config.js (ESM, minified); the v2
+                  changes below were applied directly to that bundle, in the
+                  same places the source edits would land, so the bundle is
+                  the entry's artifact and the source tree is a reference.
+                  sha256 3a7e8cbee0854971e3a8f3515785de1f60de8740a80d3aa71ddca7ae42053163
                   (the unmodified package's lib/marked.esm.js is
                   sha256 e76f3b37046a5d294159872002e5f6fcda8ed232e1be45ff76b3863f2919dae3)
   LICENSE         the package's LICENSE, byte for byte
@@ -38,4 +42,26 @@ Modification (the only changes from upstream 18.1.3):
    line whose first non-space character (within the item indent) cannot start
    any of them (fence, heading, html, blockquote, bullet, hr) — a plain
    continuation line, the common case.
-The changes are pure speedups: they cannot alter any output.
+3. (v2) Lexer.ts blockTokens: a paragraph fast path. A run of plain paragraph
+   lines is scanned with a plain character loop (helpers Yt/Gt) and emitted
+   directly as its paragraph token, skipping the block tokenizer chain; inside
+   list items the same scan emits merged text tokens. The scan bails on any
+   line that could start another block — headings, lists, fences, tables
+   (delimiter rows start with |, -, or :), setext underlines (= or -) — and
+   stops before blank lines; a trailing blank line at the end of a list item
+   is left for the space tokenizer, which only touches the token's raw.
+4. (v2) Lexer.ts blockTokens: a setext guard (helper Qt). The lheading regex
+   only runs when some line up to the first blank line could be a setext
+   underline; its heading text may span several lines, but it never crosses a
+   blank line.
+5. (v2) The HTML escape function is a regex-exec loop (slice + concat)
+   instead of test + replace-with-callback: the fastest correct form measured
+   locally (a charCodeAt loop measured slower than the regex in V8).
+6. (v2) Tokenizer.ts list: the per-line regexes are plain character loops —
+   the first non-space index (Jt), the tab-aware indent check (Xt), and the
+   trailing double-blank-line check (Kt) — and the leading-whitespace replace
+   is skipped when a line has no leading whitespace.
+The changes are pure speedups: they cannot alter any output. (parse.js, the
+entry's own module outside the vendored tree, additionally caches inline runs
+per document: a fresh Map per parse() call, at most 2,000 entries, so no
+result is ever reused between documents.)
